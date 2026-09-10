@@ -1,5 +1,6 @@
 namespace ListaDeTarefas.Models;
 
+/// <summary>Nível de prioridade de uma tarefa.</summary>
 public enum Prioridade
 {
     Baixa,
@@ -7,6 +8,7 @@ public enum Prioridade
     Alta
 }
 
+/// <summary>Representa uma tarefa a ser executada.</summary>
 public class Tarefa
 {
     public int Id { get; set; }

@@ -2,3 +2,6 @@ bin/
 obj/
 tarefas.json
 *.user
+TestResults/
+.vs/
+.vscode/

@@ -1,15 +1,16 @@
+using ListaDeTarefas.Exceptions;
 using ListaDeTarefas.Models;
-using ListaDeTarefas.Repositories;
+using ListaDeTarefas.Services;
 
 namespace ListaDeTarefas.UI;
 
 public class Menu
 {
-    private readonly ITarefaRepository _repositorio;
+    private readonly ITarefaService _servico;
 
-    public Menu(ITarefaRepository repositorio)
+    public Menu(ITarefaService servico)
     {
-        _repositorio = repositorio;
+        _servico = servico;
     }
 
     public void Executar()
@@ -22,25 +23,40 @@ public class Menu
             Console.WriteLine("1 - Criar tarefa");
             Console.WriteLine("2 - Listar tarefas");
             Console.WriteLine("3 - Buscar tarefa por ID");
-            Console.WriteLine("4 - Atualizar tarefa");
-            Console.WriteLine("5 - Marcar como concluída / pendente");
-            Console.WriteLine("6 - Remover tarefa");
+            Console.WriteLine("4 - Buscar/filtrar tarefas");
+            Console.WriteLine("5 - Atualizar tarefa");
+            Console.WriteLine("6 - Marcar como concluída / pendente");
+            Console.WriteLine("7 - Remover tarefa");
             Console.WriteLine("0 - Sair");
             Console.Write("\nEscolha uma opção: ");
 
-            switch (Console.ReadLine()?.Trim())
+            try
             {
-                case "1": CriarTarefa(); break;
-                case "2": ListarTarefas(); break;
-                case "3": BuscarTarefa(); break;
-                case "4": AtualizarTarefa(); break;
-                case "5": AlternarConclusao(); break;
-                case "6": RemoverTarefa(); break;
-                case "0": executando = false; break;
-                default:
-                    Console.WriteLine("Opção inválida.");
-                    Pausar();
-                    break;
+                switch (Console.ReadLine()?.Trim())
+                {
+                    case "1": CriarTarefa(); break;
+                    case "2": ListarTarefas(); break;
+                    case "3": BuscarPorId(); break;
+                    case "4": BuscarComFiltros(); break;
+                    case "5": AtualizarTarefa(); break;
+                    case "6": AlternarConclusao(); break;
+                    case "7": RemoverTarefa(); break;
+                    case "0": executando = false; break;
+                    default:
+                        Console.WriteLine("Opção inválida.");
+                        Pausar();
+                        break;
+                }
+            }
+            catch (TarefaNaoEncontradaException ex)
+            {
+                Console.WriteLine($"\n{ex.Message}");
+                Pausar();
+            }
+            catch (TarefaInvalidaException ex)
+            {
+                Console.WriteLine($"\n{ex.Message}");
+                Pausar();
             }
         }
 
@@ -54,19 +70,12 @@ public class Menu
         Console.Write("Título: ");
         var titulo = Console.ReadLine() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(titulo))
-        {
-            Console.WriteLine("O título é obrigatório.");
-            Pausar();
-            return;
-        }
-
         Console.Write("Descrição: ");
         var descricao = Console.ReadLine() ?? string.Empty;
 
         var prioridade = LerPrioridade();
 
-        var tarefa = _repositorio.Criar(titulo, descricao, prioridade);
+        var tarefa = _servico.Criar(titulo, descricao, prioridade);
         Console.WriteLine($"\nTarefa #{tarefa.Id} criada com sucesso.");
         Pausar();
     }
@@ -74,43 +83,54 @@ public class Menu
     private void ListarTarefas()
     {
         ExibirCabecalho("Tarefas do dia");
-
-        var tarefas = _repositorio.ListarTodas();
-
-        if (tarefas.Count == 0)
-        {
-            Console.WriteLine("Nenhuma tarefa cadastrada.");
-        }
-        else
-        {
-            foreach (var tarefa in tarefas)
-                Console.WriteLine(tarefa);
-        }
-
+        ExibirLista(_servico.ListarTodas());
         Pausar();
     }
 
-    private void BuscarTarefa()
+    private void BuscarPorId()
     {
         ExibirCabecalho("Buscar tarefa por ID");
 
         var id = LerId();
         if (id is null) return;
 
-        var tarefa = _repositorio.BuscarPorId(id.Value);
+        var tarefa = _servico.BuscarPorId(id.Value);
 
-        if (tarefa is null)
-        {
-            Console.WriteLine($"Nenhuma tarefa encontrada com o ID {id}.");
-        }
-        else
-        {
-            Console.WriteLine(tarefa);
-            Console.WriteLine($"Descrição: {tarefa.Descricao}");
-            if (tarefa.ConcluidaEm.HasValue)
-                Console.WriteLine($"Concluída em: {tarefa.ConcluidaEm:dd/MM/yyyy HH:mm}");
-        }
+        Console.WriteLine(tarefa);
+        Console.WriteLine($"Descrição: {tarefa.Descricao}");
+        if (tarefa.ConcluidaEm.HasValue)
+            Console.WriteLine($"Concluída em: {tarefa.ConcluidaEm:dd/MM/yyyy HH:mm}");
 
+        Pausar();
+    }
+
+    private void BuscarComFiltros()
+    {
+        ExibirCabecalho("Buscar/filtrar tarefas");
+
+        Console.Write("Texto (título/descrição, Enter para ignorar): ");
+        var termo = Console.ReadLine();
+
+        Console.Write("Status (1-Pendentes, 2-Concluídas, Enter para todas): ");
+        bool? concluida = Console.ReadLine()?.Trim() switch
+        {
+            "1" => false,
+            "2" => true,
+            _ => null
+        };
+
+        Console.Write("Prioridade (1-Baixa, 2-Média, 3-Alta, Enter para todas): ");
+        Prioridade? prioridade = Console.ReadLine()?.Trim() switch
+        {
+            "1" => Prioridade.Baixa,
+            "2" => Prioridade.Media,
+            "3" => Prioridade.Alta,
+            _ => null
+        };
+
+        var resultado = _servico.Buscar(termo, concluida, prioridade);
+        Console.WriteLine();
+        ExibirLista(resultado);
         Pausar();
     }
 
@@ -121,25 +141,20 @@ public class Menu
         var id = LerId();
         if (id is null) return;
 
-        var tarefaExistente = _repositorio.BuscarPorId(id.Value);
-        if (tarefaExistente is null)
-        {
-            Console.WriteLine($"Nenhuma tarefa encontrada com o ID {id}.");
-            Pausar();
-            return;
-        }
+        var tarefaExistente = _servico.BuscarPorId(id.Value);
 
         Console.WriteLine("Deixe em branco para manter o valor atual.\n");
 
         Console.Write($"Título [{tarefaExistente.Titulo}]: ");
         var titulo = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(titulo)) titulo = null;
 
         Console.Write($"Descrição [{tarefaExistente.Descricao}]: ");
         var descricao = Console.ReadLine();
+        if (string.IsNullOrEmpty(descricao)) descricao = null;
 
         Console.Write($"Prioridade [{tarefaExistente.Prioridade}] (1-Baixa, 2-Média, 3-Alta, Enter para manter): ");
-        var prioridadeEntrada = Console.ReadLine();
-        Prioridade? prioridade = prioridadeEntrada switch
+        Prioridade? prioridade = Console.ReadLine()?.Trim() switch
         {
             "1" => Prioridade.Baixa,
             "2" => Prioridade.Media,
@@ -147,8 +162,8 @@ public class Menu
             _ => null
         };
 
-        var sucesso = _repositorio.Atualizar(id.Value, titulo, descricao, prioridade, null);
-        Console.WriteLine(sucesso ? "\nTarefa atualizada com sucesso." : "\nNão foi possível atualizar a tarefa.");
+        _servico.Atualizar(id.Value, titulo, descricao, prioridade);
+        Console.WriteLine("\nTarefa atualizada com sucesso.");
         Pausar();
     }
 
@@ -159,16 +174,8 @@ public class Menu
         var id = LerId();
         if (id is null) return;
 
-        var tarefa = _repositorio.BuscarPorId(id.Value);
-        if (tarefa is null)
-        {
-            Console.WriteLine($"Nenhuma tarefa encontrada com o ID {id}.");
-            Pausar();
-            return;
-        }
-
-        _repositorio.Atualizar(id.Value, null, null, null, !tarefa.Concluida);
-        Console.WriteLine($"\nTarefa #{id} marcada como {(!tarefa.Concluida ? "pendente" : "concluída")}.");
+        var tarefa = _servico.AlternarConclusao(id.Value);
+        Console.WriteLine($"\nTarefa #{tarefa.Id} marcada como {(tarefa.Concluida ? "concluída" : "pendente")}.");
         Pausar();
     }
 
@@ -189,9 +196,21 @@ public class Menu
             return;
         }
 
-        var sucesso = _repositorio.Remover(id.Value);
-        Console.WriteLine(sucesso ? "\nTarefa removida com sucesso." : $"\nNenhuma tarefa encontrada com o ID {id}.");
+        _servico.Remover(id.Value);
+        Console.WriteLine("\nTarefa removida com sucesso.");
         Pausar();
+    }
+
+    private static void ExibirLista(IReadOnlyList<Tarefa> tarefas)
+    {
+        if (tarefas.Count == 0)
+        {
+            Console.WriteLine("Nenhuma tarefa encontrada.");
+            return;
+        }
+
+        foreach (var tarefa in tarefas)
+            Console.WriteLine(tarefa);
     }
 
     private static Prioridade LerPrioridade()
